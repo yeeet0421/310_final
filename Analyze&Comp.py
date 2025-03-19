@@ -35,7 +35,7 @@ def lambda_handler(event, context):
     bucket = s3.Bucket(bucketname)
     
     # Configure Bedrock client for resume-job matching
-    bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
+    #bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
     
     # Configure for RDS access
     rds_endpoint = configur.get('rds', 'endpoint')
@@ -47,31 +47,33 @@ def lambda_handler(event, context):
     # Get the resume key and entity data from the event
     resume_key = event['resume_key']
     raw_entities = event.get('entities_data')
-    job_id = event.get('job_id', None)
-    
+    #job_id = event.get('job_id', None)
+    job_id=0
     # If raw_entities is not provided in the event, try to read from S3
+    # 如果raw_entities是不在事件中提供的，尝试从S3中读取
     if not raw_entities:
-      entities_key = resume_key.rsplit('.', 1)[0] + "_entities.json"
-      print(f"Fetching entities from S3: {entities_key}")
-      
-      try:
-        response = s3.Object(bucketname, entities_key).get()
-        raw_entities = json.loads(response['Body'].read().decode('utf-8'))
-      except Exception as e:
-        print(f"Error reading entities file: {str(e)}")
-        raise Exception(f"Entities data not provided and could not be read from S3: {str(e)}")
-    
+    # 使用固定的entities.json文件名，而不是动态生成
+        entities_key = "entity.json"
+        print(f"Fetching entities from S3: {entities_key}")
+        
+        try:
+            response = s3.Object(bucketname, entities_key).get()
+            raw_entities = json.loads(response['Body'].read().decode('utf-8'))
+        except Exception as e:
+            print(f"Error reading entities file: {str(e)}")
+            raise Exception(f"Entities data not provided and could not be read from S3: {str(e)}")
+        
     # Connect to database
-    print("**Opening DB connection**")
-    dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
+    # print("**Opening DB connection**")
+    # dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
     
-    # Update status in database
-    sql = """
-    UPDATE resumes
-    SET status = 'processing - entity analysis'
-    WHERE file_key = %s
-    """
-    datatier.perform_action(dbConn, sql, [resume_key])
+    # # Update status in database
+    # sql = """
+    # UPDATE resumes
+    # SET status = 'processing - entity analysis'
+    # WHERE file_key = %s
+    # """
+    # datatier.perform_action(dbConn, sql, [resume_key])
     
     # Process the entities from Comprehend
     print("**Processing entities**")
@@ -293,35 +295,35 @@ def lambda_handler(event, context):
       }
     )
     
-    # Update the database with the structured resume
-    sql = """
-    UPDATE resumes
-    SET 
-      status = 'processed',
-      structured_data_key = %s,
-      candidate_name = %s,
-      candidate_email = %s,
-      candidate_phone = %s,
-      candidate_location = %s,
-      skills = %s,
-      last_processed = %s
-    WHERE file_key = %s
-    """
+    # # Update the database with the structured resume
+    # sql = """
+    # UPDATE resumes
+    # SET 
+    #   status = 'processed',
+    #   structured_data_key = %s,
+    #   candidate_name = %s,
+    #   candidate_email = %s,
+    #   candidate_phone = %s,
+    #   candidate_location = %s,
+    #   skills = %s,
+    #   last_processed = %s
+    # WHERE file_key = %s
+    # """
     
-    datatier.perform_action(
-      dbConn, 
-      sql, 
-      [
-        results_file_key,
-        personal_info['name'],
-        personal_info['email'],
-        personal_info['phone'],
-        personal_info['location'],
-        json.dumps(skills),
-        datetime.datetime.now().isoformat(),
-        resume_key
-      ]
-    )
+    # datatier.perform_action(
+    #   dbConn, 
+    #   sql, 
+    #   [
+    #     results_file_key,
+    #     personal_info['name'],
+    #     personal_info['email'],
+    #     personal_info['phone'],
+    #     personal_info['location'],
+    #     json.dumps(skills),
+    #     datetime.datetime.now().isoformat(),
+    #     resume_key
+    #   ]
+    # )
     
     # If a job ID is provided, match the resume against it
     if job_id:
@@ -490,16 +492,16 @@ def lambda_handler(event, context):
     print(str(err))
     
     # Update resume status in database
-    try:
-      sql = """
-      UPDATE resumes
-      SET status = 'error',
-          error_message = %s
-      WHERE file_key = %s
-      """
-      datatier.perform_action(dbConn, sql, [str(err), resume_key])
-    except:
-      print("Failed to update database with error status")
+    # try:
+    #   sql = """
+    #   UPDATE resumes
+    #   SET status = 'error',
+    #       error_message = %s
+    #   WHERE file_key = %s
+    #   """
+    #   datatier.perform_action(dbConn, sql, [str(err), resume_key])
+    # except:
+    #   print("Failed to update database with error status")
     
     return {
       'statusCode': 500,
