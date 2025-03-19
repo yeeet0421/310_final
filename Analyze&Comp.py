@@ -2,6 +2,7 @@
 # Lambda function to process resume entities and match against job descriptions
 # This function assumes the entities have already been extracted using Amazon Comprehend
 #
+import resume_analyzer
 
 import json
 import boto3
@@ -9,7 +10,6 @@ import os
 import uuid
 import urllib.parse
 import datetime
-import datatier
 from configparser import ConfigParser
 
 def lambda_handler(event, context):
@@ -35,24 +35,22 @@ def lambda_handler(event, context):
     bucket = s3.Bucket(bucketname)
     
     # Configure Bedrock client for resume-job matching
-    #bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
+    bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
     
-    # Configure for RDS access
-    rds_endpoint = configur.get('rds', 'endpoint')
-    rds_portnum = int(configur.get('rds', 'port_number'))
-    rds_username = configur.get('rds', 'user_name')
-    rds_pwd = configur.get('rds', 'user_pwd')
-    rds_dbname = configur.get('rds', 'db_name')
+    # Comment out DB configuration
+    # rds_endpoint = configur.get('rds', 'endpoint')
+    # rds_portnum = int(configur.get('rds', 'port_number'))
+    # rds_username = configur.get('rds', 'user_name')
+    # rds_pwd = configur.get('rds', 'user_pwd')
+    # rds_dbname = configur.get('rds', 'db_name')
     
     # Get the resume key and entity data from the event
     resume_key = event['resume_key']
     raw_entities = event.get('entities_data')
-    #job_id = event.get('job_id', None)
-    job_id=0
+    job_id = event.get('job_id', 'default_job')  # Use a default job ID if not provided
+    
     # If raw_entities is not provided in the event, try to read from S3
-    # 如果raw_entities是不在事件中提供的，尝试从S3中读取
     if not raw_entities:
-    # 使用固定的entities.json文件名，而不是动态生成
         entities_key = "entity.json"
         print(f"Fetching entities from S3: {entities_key}")
         
@@ -62,18 +60,9 @@ def lambda_handler(event, context):
         except Exception as e:
             print(f"Error reading entities file: {str(e)}")
             raise Exception(f"Entities data not provided and could not be read from S3: {str(e)}")
-        
-    # Connect to database
-    # print("**Opening DB connection**")
-    # dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
     
-    # # Update status in database
-    # sql = """
-    # UPDATE resumes
-    # SET status = 'processing - entity analysis'
-    # WHERE file_key = %s
-    # """
-    # datatier.perform_action(dbConn, sql, [resume_key])
+    # Comment out DB connection
+    # dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
     
     # Process the entities from Comprehend
     print("**Processing entities**")
@@ -295,61 +284,32 @@ def lambda_handler(event, context):
       }
     )
     
-    # # Update the database with the structured resume
-    # sql = """
-    # UPDATE resumes
-    # SET 
-    #   status = 'processed',
-    #   structured_data_key = %s,
-    #   candidate_name = %s,
-    #   candidate_email = %s,
-    #   candidate_phone = %s,
-    #   candidate_location = %s,
-    #   skills = %s,
-    #   last_processed = %s
-    # WHERE file_key = %s
-    # """
-    
-    # datatier.perform_action(
-    #   dbConn, 
-    #   sql, 
-    #   [
-    #     results_file_key,
-    #     personal_info['name'],
-    #     personal_info['email'],
-    #     personal_info['phone'],
-    #     personal_info['location'],
-    #     json.dumps(skills),
-    #     datetime.datetime.now().isoformat(),
-    #     resume_key
-    #   ]
-    # )
-    
     # If a job ID is provided, match the resume against it
     if job_id:
       print(f"**Matching resume against job {job_id}**")
       
-      # Update status in database
-      sql = """
-      UPDATE resumes
-      SET status = 'matching - job comparison'
-      WHERE file_key = %s
-      """
-      datatier.perform_action(dbConn, sql, [resume_key])
+      # Instead of getting job from DB, load from S3
+      job_file_key = f"jobs/{job_id}.json"
+      print(f"Fetching job details from S3: {job_file_key}")
       
-      # Get job description from database
-      sql = """
-      SELECT title, description, required_skills FROM jobs
-      WHERE job_id = %s
-      """
-      job_row = datatier.retrieve_one_row(dbConn, sql, [job_id])
-      
-      if not job_row:
-        raise Exception(f"Job ID {job_id} not found in database")
-      
-      job_title = job_row[0]
-      job_description = job_row[1]
-      job_required_skills = job_row[2]
+      try:
+        job_response = s3.Object(bucketname, job_file_key).get()
+        job_data = json.loads(job_response['Body'].read().decode('utf-8'))
+        
+        job_title = job_data.get('title', 'Unknown Position')
+        job_description = job_data.get('description', '')
+        job_required_skills = job_data.get('required_skills', [])
+        
+        # If required_skills is a list, convert to string
+        if isinstance(job_required_skills, list):
+          job_required_skills = ", ".join(job_required_skills)
+        
+      except Exception as e:
+        print(f"Error reading job file, using test data: {str(e)}")
+        # Use test data if job file doesn't exist
+        job_title = "Software Developer"
+        job_description = "We are looking for a skilled software developer with experience in Python, AWS, and web development."
+        job_required_skills = "Python, AWS, JavaScript, REST API, Database Design"
       
       # Use AWS Bedrock with Claude to compare resume with job
       prompt = f"""
@@ -377,17 +337,25 @@ def lambda_handler(event, context):
       - recommendation: (hire, interview, or reject)
       """
       
+      # Use the current Anthropic Claude model ID format for Bedrock
       response = bedrock_runtime.invoke_model(
-        modelId="anthropic.claude-v2",
+        modelId="anthropic.claude-3-sonnet-20240229-v1:0",  # Updated model ID
         body=json.dumps({
-          "prompt": f"\n\nHuman: {prompt}\n\nAssistant: ",
-          "max_tokens_to_sample": 4000,
-          "temperature": 0
+          "anthropic_version": "bedrock-2023-05-31",
+          "max_tokens": 4000,
+          "temperature": 0,
+          "messages": [
+            {
+              "role": "user",
+              "content": prompt
+            }
+          ]
         })
       )
       
       response_body = json.loads(response['body'].read())
-      match_analysis = response_body['completion']
+      # Extract content from the new Claude API response format
+      match_analysis = response_body['content'][0]['text']
       
       # Extract JSON from Claude's response
       try:
@@ -437,37 +405,6 @@ def lambda_handler(event, context):
         }
       )
       
-      # Store the match in database
-      sql = """
-      INSERT INTO resume_matches (resume_key, job_id, match_score, match_details, match_file_key)
-      VALUES (%s, %s, %s, %s, %s)
-      ON DUPLICATE KEY UPDATE
-        match_score = VALUES(match_score),
-        match_details = VALUES(match_details),
-        match_file_key = VALUES(match_file_key),
-        last_matched = CURRENT_TIMESTAMP
-      """
-      
-      datatier.perform_action(
-        dbConn, 
-        sql, 
-        [
-          resume_key,
-          job_id,
-          match_results.get('overall_score', 50),
-          json.dumps(match_results),
-          match_file_key
-        ]
-      )
-      
-      # Update the resume status
-      sql = """
-      UPDATE resumes
-      SET status = 'matched'
-      WHERE file_key = %s
-      """
-      datatier.perform_action(dbConn, sql, [resume_key])
-      
       # Include match results in the response
       structured_resume['job_match'] = {
         'job_id': job_id,
@@ -490,18 +427,6 @@ def lambda_handler(event, context):
   except Exception as err:
     print("**ERROR**")
     print(str(err))
-    
-    # Update resume status in database
-    # try:
-    #   sql = """
-    #   UPDATE resumes
-    #   SET status = 'error',
-    #       error_message = %s
-    #   WHERE file_key = %s
-    #   """
-    #   datatier.perform_action(dbConn, sql, [str(err), resume_key])
-    # except:
-    #   print("Failed to update database with error status")
     
     return {
       'statusCode': 500,
