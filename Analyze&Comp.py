@@ -314,6 +314,8 @@ def lambda_handler(event, context):
       
       # Use AWS Bedrock with Claude to compare resume with job
       prompt = f"""
+      <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+      You are a helpful AI assistant for Human Resource<|eot_id|><|start_header_id|>user<|end_header_id|>
       Compare the following resume summary with the job description and rate the match from 0 to 100.
       Provide a detailed analysis of the match, highlighting strengths and gaps.
       
@@ -336,6 +338,7 @@ def lambda_handler(event, context):
       - strengths: (list of candidate's strengths for this position)
       - gaps: (list of areas where the candidate lacks qualifications)
       - recommendation: (hire, interview, or reject)
+      <|eot_id|><|start_header_id|>assistant<|end_header_id|>
       """
       
       # Use the current Anthropic Claude model ID format for Bedrock
@@ -365,7 +368,8 @@ def lambda_handler(event, context):
       response_body = json.loads(response['body'].read())
       print(f"response_body: {response_body}")
       # Extract content from the new Claude API response format
-      match_analysis = response_body['content'][0]['text']
+      # match_analysis = response_body['content'][0]['text']
+      match_analysis = response_body['generation']
       
       # Extract JSON from Claude's response
       try:
