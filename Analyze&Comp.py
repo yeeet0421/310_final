@@ -2,7 +2,7 @@
 # Lambda function to process resume entities and match against job descriptions
 # This function assumes the entities have already been extracted using Amazon Comprehend
 #
-import resume_analyzer
+# import resume_analyzer
 
 import json
 import boto3
@@ -18,7 +18,7 @@ def lambda_handler(event, context):
     print("**lambda: resume_processor**")
     
     # Setup AWS based on config file
-    config_file = 'resumeapp-config.ini'
+    config_file = 'benfordapp-config.ini'
     os.environ['AWS_SHARED_CREDENTIALS_FILE'] = config_file
     
     configur = ConfigParser()
@@ -47,11 +47,13 @@ def lambda_handler(event, context):
     # Get the resume key and entity data from the event
     resume_key = event['resume_key']
     raw_entities = event.get('entities_data')
-    job_id = event.get('job_id', 'default_job')  # Use a default job ID if not provided
+    # job_id = event.get('job_id', 'default_job')  # Use a default job ID if not provided
+
+    job_id = event.get('job_id', '0')  # Use a default job ID if not provided
     
     # If raw_entities is not provided in the event, try to read from S3
     if not raw_entities:
-        entities_key = "entity.json"
+        entities_key = "310_final/p_sarkar/resume-a4be9513-dbeb-4e82-8335-2f2a356e4b44.json"
         print(f"Fetching entities from S3: {entities_key}")
         
         try:
@@ -60,7 +62,6 @@ def lambda_handler(event, context):
         except Exception as e:
             print(f"Error reading entities file: {str(e)}")
             raise Exception(f"Entities data not provided and could not be read from S3: {str(e)}")
-    
     # Comment out DB connection
     # dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
     
@@ -285,7 +286,7 @@ def lambda_handler(event, context):
     )
     
     # If a job ID is provided, match the resume against it
-    if job_id:
+    if job_id != 0:
       print(f"**Matching resume against job {job_id}**")
       
       # Instead of getting job from DB, load from S3
@@ -339,21 +340,30 @@ def lambda_handler(event, context):
       
       # Use the current Anthropic Claude model ID format for Bedrock
       response = bedrock_runtime.invoke_model(
-        modelId="anthropic.claude-3-sonnet-20240229-v1:0",  # Updated model ID
-        body=json.dumps({
-          "anthropic_version": "bedrock-2023-05-31",
-          "max_tokens": 4000,
-          "temperature": 0,
-          "messages": [
-            {
-              "role": "user",
-              "content": prompt
-            }
-          ]
-        })
+        # modelId="anthropic.claude-3-sonnet-20240229-v1:0",  # Updated model ID
+        modelId="us.meta.llama3-1-405b-instruct-v1:0",
+        contentType="application/json",
+        accept="application/json",
+        body=json.dumps(
+          {"prompt": prompt,
+          # "max_tokens": 4000,
+          "temperature": 0}
+        #   {
+        #   "anthropic_version": "bedrock-2023-05-31",
+        #   "max_tokens": 4000,
+        #   "temperature": 0,
+        #   "messages": [
+        #     {
+        #       "role": "user",
+        #       "content": prompt
+        #     }
+        #   ]
+        # }
+        )
       )
-      
+      print("**Llama successfully set up**")
       response_body = json.loads(response['body'].read())
+      print(f"response_body: {response_body}")
       # Extract content from the new Claude API response format
       match_analysis = response_body['content'][0]['text']
       
