@@ -1,9 +1,3 @@
-#
-# Lambda function to process resume entities and match against job descriptions
-# This function assumes the entities have already been extracted using Amazon Comprehend
-#
-# import resume_analyzer
-
 import json
 import boto3
 import os
@@ -37,19 +31,15 @@ def lambda_handler(event, context):
     # Configure Bedrock client for resume-job matching
     bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
     
-    # Comment out DB configuration
-    # rds_endpoint = configur.get('rds', 'endpoint')
-    # rds_portnum = int(configur.get('rds', 'port_number'))
-    # rds_username = configur.get('rds', 'user_name')
-    # rds_pwd = configur.get('rds', 'user_pwd')
-    # rds_dbname = configur.get('rds', 'db_name')
-    
     # Get the resume key and entity data from the event
     resume_key = event['resume_key']
     raw_entities = event.get('entities_data')
-    # job_id = event.get('job_id', 'default_job')  # Use a default job ID if not provided
-
     job_id = event.get('job_id', '0')  # Use a default job ID if not provided
+    
+    # NEW: Check if job description is provided in the event
+    job_title_from_event = event.get('job_title')
+    job_description_from_event = event.get('job_description')
+    job_required_skills_from_event = event.get('job_required_skills')
     
     # If raw_entities is not provided in the event, try to read from S3
     if not raw_entities:
@@ -62,8 +52,6 @@ def lambda_handler(event, context):
         except Exception as e:
             print(f"Error reading entities file: {str(e)}")
             raise Exception(f"Entities data not provided and could not be read from S3: {str(e)}")
-    # Comment out DB connection
-    # dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
     
     # Process the entities from Comprehend
     print("**Processing entities**")
@@ -285,34 +273,55 @@ def lambda_handler(event, context):
       }
     )
     
-    # If a job ID is provided, match the resume against it
-    if job_id != 0:
-      print(f"**Matching resume against job {job_id}**")
+    # Check if we should do job matching
+    # MODIFIED: We now do job matching if either:
+    # 1. We have a job_id other than "0" OR
+    # 2. We have job description details provided in the event
+    should_do_matching = (job_id != "0" and job_id != 0) or job_description_from_event is not None
+    
+    if should_do_matching:
+      print(f"**Starting job matching process**")
       
-      # Instead of getting job from DB, load from S3
-      job_file_key = f"jobs/{job_id}.json"
-      print(f"Fetching job details from S3: {job_file_key}")
-      
-      try:
-        job_response = s3.Object(bucketname, job_file_key).get()
-        job_data = json.loads(job_response['Body'].read().decode('utf-8'))
+      # MODIFIED: Prioritize job details from event over job details from S3
+      if job_description_from_event is not None:
+        print("Using job description provided in the event")
+        job_title = job_title_from_event or "Position"
+        job_description = job_description_from_event
+        job_required_skills = job_required_skills_from_event or ""
         
-        job_title = job_data.get('title', 'Unknown Position')
-        job_description = job_data.get('description', '')
-        job_required_skills = job_data.get('required_skills', [])
-        
-        # If required_skills is a list, convert to string
+        # Convert skills list to string if needed
         if isinstance(job_required_skills, list):
           job_required_skills = ", ".join(job_required_skills)
+          
+        # Use event job ID if available, otherwise generate a temporary one
+        if job_id == "0" or job_id == 0:
+          job_id = f"temp-{str(uuid.uuid4())[:8]}"
+          
+      else:
+        # Try to get job details from S3 using job_id
+        print(f"Fetching job details for job ID: {job_id}")
+        job_file_key = f"jobs/{job_id}.json"
         
-      except Exception as e:
-        print(f"Error reading job file, using test data: {str(e)}")
-        # Use test data if job file doesn't exist
-        job_title = "Software Developer"
-        job_description = "We are looking for a skilled software developer with experience in Python, AWS, and web development."
-        job_required_skills = "Python, AWS, JavaScript, REST API, Database Design"
+        try:
+          job_response = s3.Object(bucketname, job_file_key).get()
+          job_data = json.loads(job_response['Body'].read().decode('utf-8'))
+          
+          job_title = job_data.get('title', 'Unknown Position')
+          job_description = job_data.get('description', '')
+          job_required_skills = job_data.get('required_skills', [])
+          
+          # If required_skills is a list, convert to string
+          if isinstance(job_required_skills, list):
+            job_required_skills = ", ".join(job_required_skills)
+          
+        except Exception as e:
+          print(f"Error reading job file, using test data: {str(e)}")
+          # Use test data if job file doesn't exist
+          job_title = "Software Developer"
+          job_description = "We are looking for a skilled software developer with experience in Python, AWS, and web development."
+          job_required_skills = "Python, AWS, JavaScript, REST API, Database Design"
       
-      # Use AWS Bedrock with Claude to compare resume with job
+      # Use AWS Bedrock with Llama to compare resume with job
       prompt = f"""
       <|begin_of_text|><|start_header_id|>system<|end_header_id|>
       You are a helpful AI assistant for Human Resource<|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -341,41 +350,28 @@ def lambda_handler(event, context):
       <|eot_id|><|start_header_id|>assistant<|end_header_id|>
       """
       
-      # Use the current Anthropic Claude model ID format for Bedrock
+      # Use Llama model via AWS Bedrock
       response = bedrock_runtime.invoke_model(
-        # modelId="anthropic.claude-3-sonnet-20240229-v1:0",  # Updated model ID
         modelId="us.meta.llama3-1-405b-instruct-v1:0",
         contentType="application/json",
         accept="application/json",
         body=json.dumps(
           {"prompt": prompt,
-          # "max_tokens": 4000,
           "temperature": 0}
-        #   {
-        #   "anthropic_version": "bedrock-2023-05-31",
-        #   "max_tokens": 4000,
-        #   "temperature": 0,
-        #   "messages": [
-        #     {
-        #       "role": "user",
-        #       "content": prompt
-        #     }
-        #   ]
-        # }
         )
       )
-      print("**Llama successfully set up**")
+      print("**Llama successfully invoked**")
       response_body = json.loads(response['body'].read())
       print(f"response_body: {response_body}")
-      # Extract content from the new Claude API response format
-      # match_analysis = response_body['content'][0]['text']
+      
+      # Extract content from the response
       match_analysis = response_body['generation']
       
-      # Extract JSON from Claude's response
+      # Extract JSON from Llama's response
       try:
         match_results = json.loads(match_analysis)
       except:
-        # If Claude didn't return proper JSON, try to parse it
+        # If Llama didn't return proper JSON, try to parse it
         import re
         json_pattern = r'({[\s\S]*})'
         match = re.search(json_pattern, match_analysis)
