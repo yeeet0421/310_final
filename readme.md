@@ -99,51 +99,7 @@ The following permissions must be granted to the S3 readwrite user:
 
 5. **Create Lambda Functions:**
    ```bash
-   # Create IAM Role for Lambda
-   aws iam create-role \
-     --role-name resume-analyzer-lambda-role \
-     --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-   
-   # Attach necessary policies
-   aws iam attach-role-policy \
-     --role-name resume-analyzer-lambda-role \
-     --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
-   
-   aws iam attach-role-policy \
-     --role-name resume-analyzer-lambda-role \
-     --policy-arn arn:aws:iam::aws:policy/AmazonRDSFullAccess
-   
-   aws iam attach-role-policy \
-     --role-name resume-analyzer-lambda-role \
-     --policy-arn arn:aws:iam::aws:policy/ComprehendFullAccess
-   
-   aws iam attach-role-policy \
-     --role-name resume-analyzer-lambda-role \
-     --policy-arn arn:aws:iam::aws:policy/AmazonTextractFullAccess
-   
-   aws iam attach-role-policy \
-     --role-name resume-analyzer-lambda-role \
-     --policy-arn arn:aws:iam::aws:policy/AmazonBedrockFullAccess
-   
-   # Create main Lambda function
-   aws lambda create-function \
-     --function-name resume-processor \
-     --runtime python3.9 \
-     --role arn:aws:iam::ACCOUNT_ID:role/resume-analyzer-lambda-role \
-     --handler lambda_function.lambda_handler \
-     --zip-file fileb://lambda_function.zip \
-     --timeout 60 \
-     --memory-size 512
-   
-   # Create DB initialization Lambda
-   aws lambda create-function \
-     --function-name resume-analyzer-db-init \
-     --runtime python3.9 \
-     --role arn:aws:iam::ACCOUNT_ID:role/resume-analyzer-lambda-role \
-     --handler db_init.lambda_handler \
-     --zip-file fileb://db_init.zip \
-     --timeout 30 \
-     --memory-size 256
+   Create functions and paste our function handler into code, add our provided layer .zip file
    ```
 
 6. **Set up API Gateway:**
