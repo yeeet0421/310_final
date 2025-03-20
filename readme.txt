@@ -88,6 +88,11 @@ The API Gateway should be configured with the following endpoints:
   - Resets the database to its initial state
   - Use with caution as this deletes all user data
 
+## Job Status Management
+- **GET /results/{jobid}**
+  - Returns status of the jobid
+  - Path Parameter: jobid (integer)
+
 ## PDF Upload
 - **POST /pdf/{userid}**
   - Uploads a resume PDF for a specific user
@@ -101,7 +106,7 @@ The API Gateway should be configured with the following endpoints:
   - Returns: jobid (integer)
 
 ## Results Retrieval
-- **GET /results/{jobid}/{job_title}/{job_description}/{job_required_skills}**
+- **GET /jobmatch_results/{jobid}/{job_title}/{job_description}/{job_required_skills}**
   - Retrieves the analysis results for a specific job
   - Path Parameter: 
     - jobid (integer)
@@ -141,7 +146,7 @@ The API Gateway should be configured with the following endpoints:
 
 ### Client Setup Usage
 
-The Resume Analyzer  client requires a configuration file to connect to the AWS services. A sample configuration file named `resumeapp-client-config.ini` should be created with the following format:
+The Resume Analyzer  client requires a configuration file to connect to the AWS services. A sample configuration file should be created with the following format:
 
 ```ini
 [client]
@@ -220,7 +225,7 @@ The `jobs` table tracks resume analysis jobs:
 
 ## Analysis Features
 
-The Job Match Resume Analyzer provides several key features:
+The Job Match Resume Analyzer provides the following key features:
 
 ### Entity Extraction
 Using AWS Comprehend, the system extracts and categorizes entities from resumes:
@@ -247,7 +252,7 @@ Using AWS Bedrock with the Llama 3.1 405B model, the system:
 - Makes a hiring recommendation (hire, interview, or reject)
 
 ### Results Presentation
-The system presents analysis results in a clear, readable format:
+The output file presents analysis results in a clear, readable format:
 - Overall match score
 - Detailed skills assessment
 - Experience evaluation
