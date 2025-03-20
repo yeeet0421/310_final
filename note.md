@@ -13,7 +13,7 @@
 
 * reference
     * https://www.southeastern.edu/admin/career_srv/student_alumni/build_a_resume/resume_guide/samples/
-
+    * https://medium.com/@a.yashagarwal/building-a-scalable-resume-parsing-and-ranking-system-with-aws-c2be20e59fbd
 * Amazon Bedrock
     * request model access for `Llama 3.1 405B Instruct`
 

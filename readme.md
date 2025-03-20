@@ -54,6 +54,7 @@ The following permissions are needed for this project:
    - The database should include the following tables:
      - `users`: Stores user information (`userid`, `username`, `pwdhash`)
      - `jobs`: Tracks analysis jobs (`jobid`, `userid`, `status`, `originaldatafile`, `datafilekey`, `resultsfilekey`, `analyzefilekey`)
+   - The provided `db.sql` file can be used to create the database tables
    - Record the database endpoint, port, username, and password
 
 3. **Lambda Functions:**
@@ -114,7 +115,7 @@ The API Gateway should be configured with the following endpoints:
     - If job doesn't exist: Error message
 
 5. **Configuration:**
-   - Create a configuration file (`resumeapp-config.ini`) with the following sections:
+   - Modify configuration files into the following sections:
      ```ini
      [s3]
      bucket_name = your-bucket-name
@@ -131,11 +132,6 @@ The API Gateway should be configured with the following endpoints:
      region_name = your-region
      aws_access_key_id = your-access-key
      aws_secret_access_key = your-secret-key
-     ```
-   - Create a client configuration file (`benfordapp-client-config.ini`):
-     ```ini
-     [client]
-     webservice = https://your-api-gateway-url
      ```
 
 ### Client Setup Usage
@@ -160,15 +156,15 @@ The Resume Analyzer comes with a command-line interface (CLI) client that provid
 5. **Download Results** - Download analysis results for the resume analysis job
 6. **Match Resume with Job Details** - Analyze the match between the uploaded resume and the provided job information
 
-To use the CLI, simply run the provided Python script and follow the on-screen prompts:
+To use the CLI, follow the instructions in `/docker/_readme.txt` file to run docker and simply run the provided Python script and follow the on-screen prompts:
 
 ```
-python main.py
+python3 main.py
 ```
 
 ### Job Matching Process
 
-When using the "Upload Resume" option, you'll be prompted to provide:
+When using the `Upload Resume` option, you'll be prompted to provide:
 - User ID for tracking
 - Your resume PDF file name
 The system will then return the jobid for the uploaded resume. In the lambda function, the system does the following:
@@ -176,7 +172,7 @@ The system will then return the jobid for the uploaded resume. In the lambda fun
 2. Extract text using AWS Textract
 3. Identify entities using AWS Comprehend
 
-After the upload, you can use the "Match Resume with Job Details" option, you'll be prompted to provide:
+After the upload, you can use the `Match Resume with Job Details` option, you'll be prompted to provide:
 - Jobid of the resume you want to match
 - Job title
 - Job description
@@ -253,31 +249,3 @@ The system presents analysis results in a clear, readable format:
 - Education assessment
 - Strengths and weaknesses
 - Hiring recommendation with rationale
-
-## Troubleshooting
-
-Common issues and solutions:
-
-1. **API Connection Errors**:
-   - Verify API Gateway endpoint in CLI configuration
-   - Check AWS credentials and permissions
-
-2. **PDF Parsing Issues**:
-   - Ensure PDF is not password-protected
-   - Verify PDF is text-based (not scanned)
-
-3. **Database Connection Errors**:
-   - Check database credentials in config file
-   - Verify VPC security group settings
-
-4. **Analysis Delays**:
-   - Use the polling function (option 6) to automatically wait for results
-   - Large resumes may take longer to process
-
-5. **Bedrock Model Access**:
-   - Ensure you have requested and been granted access to Llama 3.1 405B Instruct model
-   - Verify IAM permissions include AmazonBedrockFullAccess
-
-## License
-
-MIT License

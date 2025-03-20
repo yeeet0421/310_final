@@ -5,6 +5,8 @@ USE benfordapp;
 DROP TABLE IF EXISTS jobs;
 DROP TABLE IF EXISTS users;
 
+DROP TABLE IF EXISTS analysis;
+
 CREATE TABLE users
 (
     userid       int not null AUTO_INCREMENT,
@@ -29,6 +31,7 @@ CREATE TABLE jobs
     FOREIGN KEY (userid) REFERENCES users(userid),
     UNIQUE      (datafilekey)
 );
+
 
 ALTER TABLE jobs AUTO_INCREMENT = 1001;  -- starting value
 
