@@ -1,6 +1,6 @@
 # Job Match Resume Analyzer
 
-A cloud-based solution that helps job seekers optimize their resumes for specific job descriptions by identifying missing keywords, assessing formatting, and providing improvement recommendations.
+A cloud-based solution that helps job seekers optimize their resumes for specific job descriptions by identifying missing keywords and providing improvement recommendations.
 
 ## Project Architecture
 
@@ -16,7 +16,7 @@ A cloud-based solution that helps job seekers optimize their resumes for specifi
 - Download analysis results
 
 ### Analysis Services
-- **AWS Textract:** Extract structured text from PDF resumes
+- **AWS Textract:** Extract structured text from single page PDF resumes
 - **AWS Comprehend:** Extract entities and identify keywords
 - **AWS Bedrock:** Perform AI-powered resume-job matching with Llama 3.1 405B
 
@@ -57,12 +57,11 @@ The following permissions are needed for this project:
    - Record the database endpoint, port, username, and password
 
 3. **Lambda Functions:**
-   - Create Lambda functions using the provided code:
-     - `db_init.py`: For initializing the database schema
-     - `lambda_function.py`: Main processor for handling resume uploads
-     - `resume_processor.py`: For processing resumes and performing job matching
-   - Configure environment variables or config files with S3 and RDS connection details
-   - Ensure Lambda functions have appropriate permissions to access S3, RDS, Textract, Comprehend, and Bedrock
+   - Create lambda functions using the provided zip files:
+     - `final_download.zip`: For downloading analysis results
+     - `final_compute.zip`: For processing resumes into structured resumes
+     - `final_analyze.zip`: Returns resume analysis results
+     - `proj03_jobs.zip`: Returns all the jobs from the database
 
 # API Gateway Endpoints
 
@@ -96,12 +95,22 @@ The API Gateway should be configured with the following endpoints:
   - Returns: jobid (integer)
 
 ## Results Retrieval
-- **GET /results/{jobid}**
+- **GET /results/{jobid}/{job_title}/{job_description}/{job_required_skills}**
   - Retrieves the analysis results for a specific job
-  - Path Parameter: jobid (integer)
+  - Path Parameter: 
+    - jobid (integer)
+    - job_title (string)
+    - job_description (string)
+    - job_required_skills (string)
   - Returns:
-    - If job is complete: Base64-encoded results
-    - If job is still processing: Status message
+    - If job is complete: Resume matching result (hire, interview, or reject, etc.), Full analysis file name, Resume structured by Amazon Comprehend file name
+    ```
+    Resume processed successfully
+    Resume matching result: reject
+    Full analysis in file: resume_analysis.json
+    Resume structed by Amazon Comprehend in file: resume_structured.json
+    ```
+    - If job is still processing: Status message (processing, error, uploaded, etc.)
     - If job doesn't exist: Error message
 
 5. **Configuration:**
@@ -109,7 +118,6 @@ The API Gateway should be configured with the following endpoints:
      ```ini
      [s3]
      bucket_name = your-bucket-name
-     profile_name = s3readwrite
      region_name = your-region
      
      [rds]
@@ -118,6 +126,11 @@ The API Gateway should be configured with the following endpoints:
      user_name = your-username
      user_pwd = your-password
      db_name = your-db-name
+
+     [s3readwrite]
+     region_name = your-region
+     aws_access_key_id = your-access-key
+     aws_secret_access_key = your-secret-key
      ```
    - Create a client configuration file (`benfordapp-client-config.ini`):
      ```ini
@@ -134,7 +147,7 @@ The Resume Analyzer  client requires a configuration file to connect to the AWS 
 webservice = https://your-api-gateway-url
 ```
 
-The  client will automatically read this configuration file to establish connection with the backend services.
+The client will automatically read this configuration file to establish connection with the backend services.
 
 ## Using the Resume Analyzer
 
@@ -144,32 +157,35 @@ The Resume Analyzer comes with a command-line interface (CLI) client that provid
 2. **View Jobs** - List all resume analysis jobs in the system
 3. **Reset Database** - Reset the database to its initial state
 4. **Upload Resume** - Upload a resume PDF for analysis
-5. **Download Results** - Download analysis results for a specific job
-6. **Upload and Poll** - Upload a resume and automatically wait for results
-7. **Upload with Job Details** - Upload a resume and provide job information for matching
+5. **Download Results** - Download analysis results for the resume analysis job
+6. **Match Resume with Job Details** - Analyze the match between the uploaded resume and the provided job information
 
 To use the CLI, simply run the provided Python script and follow the on-screen prompts:
 
 ```
-python resume_analyzer_cli.py
+python main.py
 ```
 
 ### Job Matching Process
 
-When using the "Upload with Job Details" option, you'll be prompted to provide:
-- Path to your resume PDF file
+When using the "Upload Resume" option, you'll be prompted to provide:
 - User ID for tracking
+- Your resume PDF file name
+The system will then return the jobid for the uploaded resume. In the lambda function, the system does the following:
+1. Upload your resume
+2. Extract text using AWS Textract
+3. Identify entities using AWS Comprehend
+
+After the upload, you can use the "Match Resume with Job Details" option, you'll be prompted to provide:
+- Jobid of the resume you want to match
 - Job title
 - Job description
 - Required skills for the position
 
-The system will then:
-1. Upload your resume
-2. Extract text using AWS Textract
-3. Identify entities using AWS Comprehend
-4. Structure the resume into sections (personal info, education, experience, skills)
-5. Compare your resume with the job description using AI
-6. Generate a match report with scores and recommendations
+The system will then download 2 files to your local machine. One file is `{resume_file_name}_analysis.json`, which contains the analysis results, includes the overall score from 0-100, skills match, experience match, education match, strengths, gaps, and recommendation. The other file is `{resume_file_name}_structured.json`, which contains the structured resume, includes personal info, education, experience, skills, and extracted entities. In the lambda function, the system does the following:
+1. Structure the resume into sections (personal info, education, experience, skills)
+2. Compare your resume with the job description using AI
+3. Generate a match report with scores and recommendations
 
 ## Architecture Details
 
@@ -200,25 +216,6 @@ The `jobs` table tracks resume analysis jobs:
 - `datafilekey` (text): S3 key for the uploaded resume PDF
 - `resultsfilekey` (text): S3 key for the extracted entities JSON
 - `analyzefilekey` (text): S3 key for the job match analysis results
-
-## Configuration
-
-The system uses a configuration file to manage AWS service connections. A template is provided at `benfordapp-config.ini`.
-
-Example configuration:
-```ini
-[s3]
-bucket_name = resume-analyzer-dev-resumes
-profile_name = s3readwrite
-region_name = us-east-1
-
-[rds]
-endpoint = resume-analyzer-dev.cluster-abcdefg.us-east-1.rds.amazonaws.com
-port_number = 5432
-user_name = admin
-user_pwd = your-secure-password-here
-db_name = resume_analysis
-```
 
 ## Analysis Features
 
