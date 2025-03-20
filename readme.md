@@ -11,11 +11,9 @@ A cloud-based solution that helps job seekers optimize their resumes for specifi
 - Uses AWS Bedrock with Llama 3.1 405B for resume-job matching
 - Returns detailed match analysis and recommendations
 
-### Command Line Interface
+### Main Command Line Interface Functions
 - Upload resumes and job descriptions
-- View analysis results
-- Access previous analysis reports
-- Poll for results until job is complete
+- Download analysis results
 
 ### Analysis Services
 - **AWS Textract:** Extract structured text from PDF resumes
