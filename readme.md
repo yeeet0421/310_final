@@ -21,7 +21,6 @@ A cloud-based solution that helps job seekers optimize their resumes for specifi
 - **AWS Textract:** Extract structured text from PDF resumes
 - **AWS Comprehend:** Extract entities and identify keywords
 - **AWS Bedrock:** Perform AI-powered resume-job matching with Llama 3.1 405B
-- **AWS OpenSearch:** Index and search resume content
 
 ### Data Storage
 - **Amazon S3:** Store uploaded resumes and analysis results
