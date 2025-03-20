@@ -21,7 +21,7 @@ A cloud-based solution that helps job seekers optimize their resumes for specifi
 - **AWS Textract:** Extract structured text from PDF resumes
 - **AWS Comprehend:** Extract entities and identify keywords
 - **AWS Bedrock:** Perform AI-powered resume-job matching with Llama 3.1 405B
-- **AWS OpenSearch:** Index and search resume content
+
 
 ### Data Storage
 - **Amazon S3:** Store uploaded resumes and analysis results
@@ -43,7 +43,7 @@ The following permissions are needed for this project:
 - AWS Textract access (for PDF processing)
 - AWS Comprehend access (for entity extraction)
 - AWS Bedrock access (for AI resume matching)
-- AWS OpenSearch access (optional, for advanced search)
+
 
 ### Manual Infrastructure Setup
 
@@ -107,7 +107,7 @@ The API Gateway should be configured with the following endpoints:
     - If job doesn't exist: Error message
 
 5. **Configuration:**
-   - Create a configuration file (`benfordapp-config.ini`) with the following sections:
+   - Create a configuration file (`resumeapp-config.ini`) with the following sections:
      ```ini
      [s3]
      bucket_name = your-bucket-name
@@ -127,16 +127,16 @@ The API Gateway should be configured with the following endpoints:
      webservice = https://your-api-gateway-url
      ```
 
-### CLI Client Setup
+### Client Setup Usage
 
-The Resume Analyzer CLI client requires a configuration file to connect to the AWS services. A sample configuration file named `benfordapp-client-config.ini` should be created with the following format:
+The Resume Analyzer  client requires a configuration file to connect to the AWS services. A sample configuration file named `resumeapp-client-config.ini` should be created with the following format:
 
 ```ini
 [client]
 webservice = https://your-api-gateway-url
 ```
 
-The CLI client will automatically read this configuration file to establish connection with the backend services.
+The  client will automatically read this configuration file to establish connection with the backend services.
 
 ## Using the Resume Analyzer
 
