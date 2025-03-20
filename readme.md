@@ -22,6 +22,7 @@ A cloud-based solution that helps job seekers optimize their resumes for specifi
 - **AWS Comprehend:** Extract entities and identify keywords
 - **AWS Bedrock:** Perform AI-powered resume-job matching with Llama 3.1 405B
 
+
 ### Data Storage
 - **Amazon S3:** Store uploaded resumes and analysis results
 - **Amazon RDS Aurora Serverless:** Store analysis reports and metadata
@@ -31,7 +32,6 @@ A cloud-based solution that helps job seekers optimize their resumes for specifi
 ### Prerequisites
 - AWS Account with appropriate permissions
 - AWS CLI installed and configured
-- Terraform installed
 - Python 3.9+ installed
 - Access to Amazon Bedrock Llama 3.1 405B Instruct model
 
@@ -41,8 +41,12 @@ The following permissions must be granted to the S3 readwrite user:
 - AmazonTextractFullAccess
 - ComprehendFullAccess
 - AmazonBedrockFullAccess
+- AmazonS3FullAccess
+- AmazonRDSFullAccess
+- AWSLambdaFullAccess
+- AmazonAPIGatewayAdministrator
 
-### Infrastructure Deployment
+### Manual Infrastructure Deployment
 
 1. **Clone the repository:**
    ```
@@ -50,43 +54,175 @@ The following permissions must be granted to the S3 readwrite user:
    cd resume-analyzer
    ```
 
-2. **Initialize Terraform:**
-   ```
-   terraform init
-   ```
-
-3. **Configure Variables:**
-   Create a `terraform.tfvars` file with your specific configuration values:
-   ```
-   aws_region = "us-east-1"
-   app_name = "resume-analyzer"
-   environment = "dev"
+2. **Create S3 Bucket:**
+   ```bash
+   aws s3api create-bucket \
+     --bucket resume-analyzer-dev-resumes \
+     --region us-east-1
    ```
 
-4. **Prepare Lambda Deployment Packages:**
-   ```
-   # Prepare main Lambda function
+3. **Create Lambda Deployment Packages:**
+   ```bash
+   # Create directories for Lambda packages
+   mkdir -p lambda_layer/python
+   
+   # Install required dependencies
    pip install -t ./lambda_layer/python boto3 pypdf nltk spacy papaparse
+   
+   # Create Lambda deployment package
    cd lambda_layer
    zip -r ../lambda_function.zip .
    cd ..
    zip -g lambda_function.zip lambda_function.py
    
-   # Prepare DB init Lambda function
+   # Create DB initialization Lambda
    zip db_init.zip db_init.py
    ```
 
-5. **Deploy Infrastructure:**
-   ```
-   terraform apply
+4. **Create RDS Database:**
+   ```bash
+   # Create a security group for RDS
+   aws ec2 create-security-group \
+     --group-name resume-analyzer-db-sg \
+     --description "Security group for Resume Analyzer RDS"
+   
+   # Create the RDS instance
+   aws rds create-db-instance \
+     --db-instance-identifier resume-analyzer-db \
+     --db-instance-class db.t3.micro \
+     --engine postgres \
+     --master-username admin \
+     --master-user-password your-secure-password \
+     --allocated-storage 20 \
+     --vpc-security-group-ids sg-xxxxxxxx
    ```
 
-6. **Note the Outputs:**
-   After successful deployment, Terraform will output:
-   - API Gateway endpoint URL
-   - OpenSearch domain endpoint
-   - RDS database endpoint
-   - S3 bucket name
+5. **Create Lambda Functions:**
+   ```bash
+   # Create IAM Role for Lambda
+   aws iam create-role \
+     --role-name resume-analyzer-lambda-role \
+     --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+   
+   # Attach necessary policies
+   aws iam attach-role-policy \
+     --role-name resume-analyzer-lambda-role \
+     --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+   
+   aws iam attach-role-policy \
+     --role-name resume-analyzer-lambda-role \
+     --policy-arn arn:aws:iam::aws:policy/AmazonRDSFullAccess
+   
+   aws iam attach-role-policy \
+     --role-name resume-analyzer-lambda-role \
+     --policy-arn arn:aws:iam::aws:policy/ComprehendFullAccess
+   
+   aws iam attach-role-policy \
+     --role-name resume-analyzer-lambda-role \
+     --policy-arn arn:aws:iam::aws:policy/AmazonTextractFullAccess
+   
+   aws iam attach-role-policy \
+     --role-name resume-analyzer-lambda-role \
+     --policy-arn arn:aws:iam::aws:policy/AmazonBedrockFullAccess
+   
+   # Create main Lambda function
+   aws lambda create-function \
+     --function-name resume-processor \
+     --runtime python3.9 \
+     --role arn:aws:iam::ACCOUNT_ID:role/resume-analyzer-lambda-role \
+     --handler lambda_function.lambda_handler \
+     --zip-file fileb://lambda_function.zip \
+     --timeout 60 \
+     --memory-size 512
+   
+   # Create DB initialization Lambda
+   aws lambda create-function \
+     --function-name resume-analyzer-db-init \
+     --runtime python3.9 \
+     --role arn:aws:iam::ACCOUNT_ID:role/resume-analyzer-lambda-role \
+     --handler db_init.lambda_handler \
+     --zip-file fileb://db_init.zip \
+     --timeout 30 \
+     --memory-size 256
+   ```
+
+6. **Set up API Gateway:**
+   ```bash
+   # Create the API
+   aws apigateway create-rest-api \
+     --name "Resume Analyzer API" \
+     --description "API for Resume Analyzer"
+   
+   # Get the API ID
+   API_ID=$(aws apigateway get-rest-apis \
+     --query "items[?name=='Resume Analyzer API'].id" \
+     --output text)
+   
+   # Get the root resource ID
+   ROOT_ID=$(aws apigateway get-resources \
+     --rest-api-id $API_ID \
+     --query "items[?path=='/'].id" \
+     --output text)
+   
+   # Create resources and methods (example for /users endpoint)
+   aws apigateway create-resource \
+     --rest-api-id $API_ID \
+     --parent-id $ROOT_ID \
+     --path-part "users"
+   
+   USER_RESOURCE_ID=$(aws apigateway get-resources \
+     --rest-api-id $API_ID \
+     --query "items[?path=='/users'].id" \
+     --output text)
+   
+   aws apigateway put-method \
+     --rest-api-id $API_ID \
+     --resource-id $USER_RESOURCE_ID \
+     --http-method GET \
+     --authorization-type NONE
+   
+   # Create other resources and methods for /jobs, /reset, /pdf, /results
+   # (similar commands as above)
+   
+   # Deploy the API
+   aws apigateway create-deployment \
+     --rest-api-id $API_ID \
+     --stage-name dev
+   ```
+
+7. **Initialize the Database:**
+   ```bash
+   # Invoke the DB initialization Lambda
+   aws lambda invoke \
+     --function-name resume-analyzer-db-init \
+     --payload '{}' \
+     output.txt
+   ```
+
+8. **Note the API Gateway URL:**
+   ```bash
+   # Get the API Gateway URL
+   echo "https://$API_ID.execute-api.us-east-1.amazonaws.com/dev"
+   ```
+
+9. **Configure the CLI:**
+   Update the configuration file with the API Gateway endpoint and other settings:
+   ```ini
+   [client]
+   webservice = https://API_ID.execute-api.us-east-1.amazonaws.com/dev
+   
+   [s3]
+   bucket_name = resume-analyzer-dev-resumes
+   profile_name = s3readwrite
+   region_name = us-east-1
+   
+   [rds]
+   endpoint = your-db-endpoint.us-east-1.rds.amazonaws.com
+   port_number = 5432
+   user_name = admin
+   user_pwd = your-secure-password
+   db_name = resume_analysis
+   ```
 
 ### CLI Client Setup
 
