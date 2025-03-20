@@ -4,6 +4,7 @@ import os
 import uuid
 import urllib.parse
 import datetime
+import datatier
 from configparser import ConfigParser
 
 def lambda_handler(event, context):
@@ -31,27 +32,103 @@ def lambda_handler(event, context):
     # Configure Bedrock client for resume-job matching
     bedrock_runtime = boto3.client('bedrock-runtime', region_name=region_name)
     
-    # Get the resume key and entity data from the event
-    resume_key = event['resume_key']
-    raw_entities = event.get('entities_data')
-    job_id = event.get('job_id', '0')  # Use a default job ID if not provided
+    # DB configuration
+    rds_endpoint = configur.get('rds', 'endpoint')
+    rds_portnum = int(configur.get('rds', 'port_number'))
+    rds_username = configur.get('rds', 'user_name')
+    rds_pwd = configur.get('rds', 'user_pwd')
+    rds_dbname = configur.get('rds', 'db_name')
+
+    #
+    # open connection to the database:
+    #
+    print("**Opening DB connection for get entity.json -- resultsfilekey**")
+    #
+    dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
+
+    #
+    # take jobid (resumeid) from event: could be a parameter
+    # or could be part of URL path ("pathParameters"):
+    #
+    if "jobid" in event:
+      jobid = event["jobid"]
+    elif "pathParameters" in event:
+      if "jobid" in event["pathParameters"]:
+        jobid = event["pathParameters"]["jobid"]
+      else:
+        raise Exception("requires jobid parameter in pathParameters")
+    else:
+        raise Exception("requires jobid parameter in event")
     
-    # NEW: Check if job description is provided in the event
-    job_title_from_event = event.get('job_title')
-    job_description_from_event = event.get('job_description')
-    job_required_skills_from_event = event.get('job_required_skills')
+    if "job_title" in event:
+      job_title = event["job_title"]
+    elif "pathParameters" in event:
+      if "job_title" in event["pathParameters"]:
+        job_title = event["pathParameters"]["job_title"]
+      else:
+        raise Exception("requires job_title parameter in pathParameters")
+    else:
+        raise Exception("requires job_title parameter in event")
     
-    # If raw_entities is not provided in the event, try to read from S3
-    if not raw_entities:
-        entities_key = "310_final/p_sarkar/resume-a4be9513-dbeb-4e82-8335-2f2a356e4b44.json"
-        print(f"Fetching entities from S3: {entities_key}")
+    if "job_description" in event:
+      job_description = event["job_description"]
+    elif "pathParameters" in event:
+      if "job_description" in event["pathParameters"]:
+        job_description = event["pathParameters"]["job_description"]
+      else:
+        raise Exception("requires job_description parameter in pathParameters")
+    else:
+        raise Exception("requires job_description parameter in event")
+
+    if "job_required_skills" in event:
+      job_required_skills = event["job_required_skills"]
+    elif "pathParameters" in event:
+      if "job_description" in event["pathParameters"]:
+        job_required_skills = event["pathParameters"]["job_required_skills"]
+      else:
+        raise Exception("requires job_required_skills parameter in pathParameters")
+    else:
+        raise Exception("requires job_required_skills parameter in event")
         
-        try:
-            response = s3.Object(bucketname, entities_key).get()
-            raw_entities = json.loads(response['Body'].read().decode('utf-8'))
-        except Exception as e:
-            print(f"Error reading entities file: {str(e)}")
-            raise Exception(f"Entities data not provided and could not be read from S3: {str(e)}")
+    print("jobid:", jobid)
+    #
+    # first we need to make sure the userid is valid:
+    #
+    print("**Checking if jobid is valid**")
+    
+    sql = "SELECT * FROM jobs WHERE jobid = %s;"
+    
+    row = datatier.retrieve_one_row(dbConn, sql, [jobid])
+    
+    if row == ():  # no such job
+      print("**No such job, returning...**")
+      return {
+        'statusCode': 400,
+        'body': json.dumps("no such job...")
+      }
+    print(row)
+    
+    status = row[2]
+    original_data_file = row[3]
+    data_file_key = row[4]
+    results_file_key = row[5]
+    
+    print("job status:", status)
+    print("original data file:", original_data_file)
+    print("results file key:", results_file_key)
+
+    # Get the resume key and entity data from the event
+    resume_key = results_file_key
+    response = s3.Object(bucketname, resume_key).get()
+
+    try:
+      raw_entities = json.loads(response['Body'].read().decode('utf-8'))
+    except Exception as e:
+      print(f"Error reading entities file: {str(e)}")
+      raise Exception(f"Entities data is not ready in S3: {str(e)}")
+      
+    # Comment out DB connection
+    # dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
     
     # Process the entities from Comprehend
     print("**Processing entities**")
@@ -255,174 +332,141 @@ def lambda_handler(event, context):
     resume_summary += "\nSKILLS:\n"
     resume_summary += ", ".join(skills)
     
-    # Store the structured resume and summary in S3
-    results_file_key = resume_key.rsplit('.', 1)[0] + "_structured.json"
+    # # Store the structured resume and summary in S3
+    # results_file_key = resume_key.rsplit('.', 1)[0] + "_structured.json"
     
-    print(f"**Saving structured resume to {results_file_key}**")
+    # print(f"**Saving structured resume to {results_file_key}**")
     
-    local_results_file = "/tmp/structured_resume.json"
-    with open(local_results_file, "w") as outfile:
-      json.dump(structured_resume, outfile, indent=2)
+    # local_results_file = "/tmp/structured_resume.json"
+    # with open(local_results_file, "w") as outfile:
+    #   json.dump(structured_resume, outfile, indent=2)
+    
+    # bucket.upload_file(
+    #   local_results_file,
+    #   results_file_key,
+    #   ExtraArgs={
+    #     'ACL': 'public-read',
+    #     'ContentType': 'application/json'
+    #   }
+    # )
+    
+    # Check if we should do job matching
+    # MODIFIED: We now do job matching if either:
+    # 1. We have a job_id other than "0" OR
+    # 2. We have job description details provided in the event
+    
+    print(f"**Starting job matching process**")
+
+    # Use AWS Bedrock with Llama to compare resume with job
+    prompt = f"""
+    <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    You are a helpful AI assistant for Human Resource<|eot_id|><|start_header_id|>user<|end_header_id|>
+    Compare the following resume summary with the job description and rate the match from 0 to 100.
+    Provide a detailed analysis of the match, highlighting strengths and gaps.
+    
+    RESUME SUMMARY:
+    {resume_summary}
+    
+    JOB TITLE: {job_title}
+    
+    JOB DESCRIPTION:
+    {job_description}
+    
+    REQUIRED SKILLS:
+    {job_required_skills}
+    
+    Provide your response in JSON format with these fields:
+    - overall_score: (number between 0-100)
+    - skills_match: (description of skills that match and skills that are missing)
+    - experience_match: (assessment of relevant experience)
+    - education_match: (assessment of education requirements)
+    - strengths: (list of candidate's strengths for this position)
+    - gaps: (list of areas where the candidate lacks qualifications)
+    - recommendation: (hire, interview, or reject)
+    <|eot_id|><|start_header_id|>assistant<|end_header_id|>
+    """
+    
+    # Use the current Anthropic Llama model ID format for Bedrock
+    response = bedrock_runtime.invoke_model(
+      modelId="us.meta.llama3-1-405b-instruct-v1:0",
+      contentType="application/json",
+      accept="application/json",
+      body=json.dumps(
+        {"prompt": prompt,
+        "temperature": 0}
+      )
+    )
+    print("**Llama successfully invoked**")
+    response_body = json.loads(response['body'].read())
+    # print(f"response_body: {response_body}")
+
+    # Extract content from the response
+    match_analysis = response_body['generation']
+    
+    # Extract JSON from Llama's response
+    try:
+      match_results = json.loads(match_analysis)
+    except:
+      # If Llama didn't return proper JSON, try to parse it
+      import re
+      json_pattern = r'({[\s\S]*})'
+      match = re.search(json_pattern, match_analysis)
+      if match:
+        try:
+          match_results = json.loads(match.group(1))
+        except:
+          match_results = {
+            "overall_score": 50,
+            "skills_match": "Unable to parse detailed results",
+            "experience_match": "Unable to parse detailed results",
+            "education_match": "Unable to parse detailed results",
+            "strengths": [],
+            "gaps": [],
+            "recommendation": "unknown"
+          }
+      else:
+        match_results = {
+          "overall_score": 50,
+          "skills_match": "Error parsing results",
+          "experience_match": "Error parsing results",
+          "education_match": "Error parsing results",
+          "strengths": [],
+          "gaps": [],
+          "recommendation": "unknown"
+        }
+    print(f"match_results: {match_results}")
+    # Store the match results
+    match_file_key = f"{resume_key.rsplit('.', 1)[0]}_matches_{jobid}.json"
+    
+    local_match_file = "/tmp/match_results.json"
+    with open(local_match_file, "w") as outfile:
+      json.dump(match_results, outfile, indent=2)
     
     bucket.upload_file(
-      local_results_file,
-      results_file_key,
+      local_match_file,
+      match_file_key,
       ExtraArgs={
         'ACL': 'public-read',
         'ContentType': 'application/json'
       }
     )
     
-    # Check if we should do job matching
-    # MODIFIED: We now do job matching if either:
-    # 1. We have a job_id other than "0" OR
-    # 2. We have job description details provided in the event
-    should_do_matching = (job_id != "0" and job_id != 0) or job_description_from_event is not None
-    
-    if should_do_matching:
-      print(f"**Starting job matching process**")
-      
-      # MODIFIED: Prioritize job details from event over job details from S3
-      if job_description_from_event is not None:
-        print("Using job description provided in the event")
-        job_title = job_title_from_event or "Position"
-        job_description = job_description_from_event
-        job_required_skills = job_required_skills_from_event or ""
-        
-        # Convert skills list to string if needed
-        if isinstance(job_required_skills, list):
-          job_required_skills = ", ".join(job_required_skills)
-          
-        # Use event job ID if available, otherwise generate a temporary one
-        if job_id == "0" or job_id == 0:
-          job_id = f"temp-{str(uuid.uuid4())[:8]}"
-          
-      else:
-        # Try to get job details from S3 using job_id
-        print(f"Fetching job details for job ID: {job_id}")
-        job_file_key = f"jobs/{job_id}.json"
-        
-        try:
-          job_response = s3.Object(bucketname, job_file_key).get()
-          job_data = json.loads(job_response['Body'].read().decode('utf-8'))
-          
-          job_title = job_data.get('title', 'Unknown Position')
-          job_description = job_data.get('description', '')
-          job_required_skills = job_data.get('required_skills', [])
-          
-          # If required_skills is a list, convert to string
-          if isinstance(job_required_skills, list):
-            job_required_skills = ", ".join(job_required_skills)
-          
-        except Exception as e:
-          print(f"Error reading job file, using test data: {str(e)}")
-          # Use test data if job file doesn't exist
-          job_title = "Software Developer"
-          job_description = "We are looking for a skilled software developer with experience in Python, AWS, and web development."
-          job_required_skills = "Python, AWS, JavaScript, REST API, Database Design"
-      
-      # Use AWS Bedrock with Llama to compare resume with job
-      prompt = f"""
-      <|begin_of_text|><|start_header_id|>system<|end_header_id|>
-      You are a helpful AI assistant for Human Resource<|eot_id|><|start_header_id|>user<|end_header_id|>
-      Compare the following resume summary with the job description and rate the match from 0 to 100.
-      Provide a detailed analysis of the match, highlighting strengths and gaps.
-      
-      RESUME SUMMARY:
-      {resume_summary}
-      
-      JOB TITLE: {job_title}
-      
-      JOB DESCRIPTION:
-      {job_description}
-      
-      REQUIRED SKILLS:
-      {job_required_skills}
-      
-      Provide your response in JSON format with these fields:
-      - overall_score: (number between 0-100)
-      - skills_match: (description of skills that match and skills that are missing)
-      - experience_match: (assessment of relevant experience)
-      - education_match: (assessment of education requirements)
-      - strengths: (list of candidate's strengths for this position)
-      - gaps: (list of areas where the candidate lacks qualifications)
-      - recommendation: (hire, interview, or reject)
-      <|eot_id|><|start_header_id|>assistant<|end_header_id|>
-      """
-      
-      # Use Llama model via AWS Bedrock
-      response = bedrock_runtime.invoke_model(
-        modelId="us.meta.llama3-1-405b-instruct-v1:0",
-        contentType="application/json",
-        accept="application/json",
-        body=json.dumps(
-          {"prompt": prompt,
-          "temperature": 0}
-        )
-      )
-      print("**Llama successfully invoked**")
-      response_body = json.loads(response['body'].read())
-      print(f"response_body: {response_body}")
-      
-      # Extract content from the response
-      match_analysis = response_body['generation']
-      
-      # Extract JSON from Llama's response
-      try:
-        match_results = json.loads(match_analysis)
-      except:
-        # If Llama didn't return proper JSON, try to parse it
-        import re
-        json_pattern = r'({[\s\S]*})'
-        match = re.search(json_pattern, match_analysis)
-        if match:
-          try:
-            match_results = json.loads(match.group(1))
-          except:
-            match_results = {
-              "overall_score": 50,
-              "skills_match": "Unable to parse detailed results",
-              "experience_match": "Unable to parse detailed results",
-              "education_match": "Unable to parse detailed results",
-              "strengths": [],
-              "gaps": [],
-              "recommendation": "unknown"
-            }
-        else:
-          match_results = {
-            "overall_score": 50,
-            "skills_match": "Error parsing results",
-            "experience_match": "Error parsing results",
-            "education_match": "Error parsing results",
-            "strengths": [],
-            "gaps": [],
-            "recommendation": "unknown"
-          }
-      
-      # Store the match results
-      match_file_key = f"matches/{resume_key.rsplit('/', 1)[-1].rsplit('.', 1)[0]}_{job_id}.json"
-      
-      local_match_file = "/tmp/match_results.json"
-      with open(local_match_file, "w") as outfile:
-        json.dump(match_results, outfile, indent=2)
-      
-      bucket.upload_file(
-        local_match_file,
-        match_file_key,
-        ExtraArgs={
-          'ACL': 'public-read',
-          'ContentType': 'application/json'
-        }
-      )
-      
-      # Include match results in the response
-      structured_resume['job_match'] = {
-        'job_id': job_id,
-        'job_title': job_title,
-        'match_score': match_results.get('overall_score', 50),
-        'match_analysis': match_results
-      }
-    
+    print("**Opening DB connection for stating the analyze key**")
+    #
+    dbConn = datatier.get_dbConn(rds_endpoint, rds_portnum, rds_username, rds_pwd, rds_dbname)
+    #
+    sql = "UPDATE jobs SET status=%s, analyzefilekey=%s WHERE resultsfilekey=%s;"
+    datatier.perform_action(dbConn, sql, ["completed", match_file_key, results_file_key])
+    #
+
+    # Include match results in the response
+    structured_resume['job_match'] = {
+      'job_id': jobid,
+      'job_title': job_title,
+      'match_score': match_results.get('overall_score', 50),
+      'match_analysis': match_results
+    }
+  
     # Return the structured resume
     return {
       'statusCode': 200,
@@ -430,7 +474,7 @@ def lambda_handler(event, context):
         'message': 'Resume processed successfully',
         'resume_key': resume_key,
         'structured_resume': structured_resume,
-        'results_file_key': results_file_key
+        'analysis_file_key': match_file_key
       })
     }
     

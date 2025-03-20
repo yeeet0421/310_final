@@ -16,3 +16,6 @@
 
 * Amazon Bedrock
     * request model access for `Llama 3.1 405B Instruct`
+
+* TODO
+    * if status is "completed", then can operate analyze
