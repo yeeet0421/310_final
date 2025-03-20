@@ -1,45 +1,71 @@
--- Database schema for Resume Analyzer
+CREATE DATABASE IF NOT EXISTS benfordapp;
 
--- Drop tables if they exist
-DROP TABLE IF EXISTS analysis_reports;
+USE benfordapp;
+
 DROP TABLE IF EXISTS jobs;
+DROP TABLE IF EXISTS users;
 
--- Create jobs table to track resume analysis jobs
-CREATE TABLE jobs (
-    job_id SERIAL PRIMARY KEY,
-    datafilekey VARCHAR(255) NOT NULL UNIQUE,  -- S3 key for the uploaded resume
-    resultsfilekey VARCHAR(255),               -- S3 key for the analysis results
-    status VARCHAR(100) NOT NULL,              -- Job status (new, processing, completed, error)
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    job_description TEXT NOT NULL              -- The job description text
+CREATE TABLE users
+(
+    userid       int not null AUTO_INCREMENT,
+    username     varchar(64) not null,
+    pwdhash      varchar(256) not null,
+    PRIMARY KEY  (userid),
+    UNIQUE       (username)
 );
 
--- Create analysis_reports table to store analysis results
-CREATE TABLE analysis_reports (
-    analysis_id VARCHAR(36) PRIMARY KEY,
-    resume_name VARCHAR(255) NOT NULL,
-    job_description TEXT NOT NULL,
-    results TEXT NOT NULL,                    -- JSON string containing analysis results
-    match_score FLOAT NOT NULL,
-    created_at TIMESTAMP NOT NULL
+ALTER TABLE users AUTO_INCREMENT = 80001;  -- starting value
+
+CREATE TABLE jobs
+(
+    jobid             int not null AUTO_INCREMENT,
+    userid            int not null,
+    status            varchar(256) not null,  -- uploaded, completed, error, processing...
+    originaldatafile  varchar(256) not null,  -- original PDF filename from user
+    datafilekey       varchar(256) not null,  -- PDF filename in S3 (bucketkey)
+    resultsfilekey    varchar(256) not null,  -- results filename in S3 bucket
+    analyzefilekey    varchar(256) not null,  -- analyze filename in S3 bucket
+    PRIMARY KEY (jobid),
+    FOREIGN KEY (userid) REFERENCES users(userid),
+    UNIQUE      (datafilekey)
 );
 
--- Create indexes
-CREATE INDEX idx_jobs_status ON jobs(status);
-CREATE INDEX idx_jobs_created_at ON jobs(created_at);
-CREATE INDEX idx_analysis_reports_created_at ON analysis_reports(created_at);
+ALTER TABLE jobs AUTO_INCREMENT = 1001;  -- starting value
 
--- Create trigger to update the updated_at timestamp
-CREATE OR REPLACE FUNCTION update_modified_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+--
+-- Insert some users to start with:
+-- 
+-- PWD hashing: https://phppasswordhash.com/
+--
+INSERT INTO users(username, pwdhash)  -- pwd = abc123!!
+            values('p_sarkar', '$2y$10$/8B5evVyaHF.hxVx0i6dUe2JpW89EZno/VISnsiD1xSh6ZQsNMtXK');
 
-CREATE TRIGGER update_jobs_modtime
-BEFORE UPDATE ON jobs
-FOR EACH ROW
-EXECUTE FUNCTION update_modified_column();
+INSERT INTO users(username, pwdhash)  -- pwd = abc456!!
+            values('e_ricci', '$2y$10$F.FBSF4zlas/RpHAxqsuF.YbryKNr53AcKBR3CbP2KsgZyMxOI2z2');
+
+INSERT INTO users(username, pwdhash)  -- pwd = abc789!!
+            values('l_chen', '$2y$10$GmIzRsGKP7bd9MqH.mErmuKvZQ013kPfkKbeUAHxar5bn1vu9.sdK');
+
+--
+-- creating user accounts for database access:
+--
+-- ref: https://dev.mysql.com/doc/refman/8.0/en/create-user.html
+--
+
+DROP USER IF EXISTS 'benfordapp-read-only';
+DROP USER IF EXISTS 'benfordapp-read-write';
+
+CREATE USER 'benfordapp-read-only' IDENTIFIED BY 'abc123!!';
+CREATE USER 'benfordapp-read-write' IDENTIFIED BY 'def456!!';
+
+GRANT SELECT, SHOW VIEW ON benfordapp.* 
+      TO 'benfordapp-read-only';
+GRANT SELECT, SHOW VIEW, INSERT, UPDATE, DELETE, DROP, CREATE, ALTER ON benfordapp.* 
+      TO 'benfordapp-read-write';
+      
+FLUSH PRIVILEGES;
+
+--
+-- done
+--
+
