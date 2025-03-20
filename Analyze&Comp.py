@@ -113,6 +113,9 @@ def lambda_handler(event, context):
     data_file_key = row[4]
     results_file_key = row[5]
     
+    if status != "completed":
+      raise Exception("Resume is not ready for processing: " + status)
+
     print("job status:", status)
     print("original data file:", original_data_file)
     print("results file key:", results_file_key)
