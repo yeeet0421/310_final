@@ -63,6 +63,11 @@ The following permissions are needed for this project:
      - `final_compute.zip`: For processing resumes into structured resumes
      - `final_analyze.zip`: Returns resume analysis results
      - `proj03_jobs.zip`: Returns all the jobs from the database
+  - Reuse lambda functions used in Homework 3
+     - `proj03_users`: Returns all the users from the database
+     - `proj03_reset`: Resets the database to its initial state
+     - `proj03_upload`: Uploads a resume PDF for a specific user to S3 and returns the jobid
+
 
 # API Gateway Endpoints
 
