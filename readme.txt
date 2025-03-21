@@ -58,6 +58,7 @@ The following permissions are needed for this project:
    - Record the database endpoint, port, username, and password
 
 3. **Lambda Functions:**
+   - We applied the `pymysql-pypdf-layer` from homework 3 to all lambda functions.
    - Create lambda functions using the provided zip files:
      - `final_download.zip`: For downloading analysis results
      - `final_compute.zip`: For processing resumes into structured resumes
